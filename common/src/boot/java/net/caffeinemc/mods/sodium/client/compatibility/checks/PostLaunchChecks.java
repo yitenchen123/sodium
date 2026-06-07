@@ -19,11 +19,13 @@ public class PostLaunchChecks {
         GraphicsDriverChecks.postContextInit(window, context);
         NvidiaWorkarounds.applyContextChanges(context);
 
+        // ===== 修改开始：注释掉 PojavLauncher 检测 =====
         // FIXME: This can be determined earlier, but we can't access the GUI classes in pre-launch
-        if (isUsingPojavLauncher()) {
-            throw new RuntimeException("It appears that you are using PojavLauncher, which is not supported when " +
-                    "using Sodium. Please check your mods list.");
-        }
+        // if (isUsingPojavLauncher()) {
+        //     throw new RuntimeException("It appears that you are using PojavLauncher, which is not supported when " +
+        //             "using Sodium. Please check your mods list.");
+        // }
+        // ===== 修改结束 =====
     }
 
     // https://github.com/CaffeineMC/sodium/issues/1916
