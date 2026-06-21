@@ -18,8 +18,8 @@ import net.caffeinemc.mods.sodium.client.SodiumClientMod;
 import net.caffeinemc.mods.sodium.client.compatibility.environment.OsUtils;
 import net.caffeinemc.mods.sodium.client.compatibility.workarounds.Workarounds;
 import net.caffeinemc.mods.sodium.client.config.structure.Config;
-import net.caffeinemc.mods.sodium.client.gl.arena.staging.MappedStagingBuffer;
-import net.caffeinemc.mods.sodium.client.gl.device.RenderDevice;
+import net.caffeinemc.mods.sodium.client.gui.options.FullscreenMode;
+import net.caffeinemc.mods.sodium.client.gui.options.Toggle;
 import net.caffeinemc.mods.sodium.client.gui.options.control.ControlValueFormatterImpls;
 import net.caffeinemc.mods.sodium.client.render.chunk.DeferMode;
 import net.caffeinemc.mods.sodium.client.render.chunk.translucent_sorting.QuadSplittingMode;
@@ -34,6 +34,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ParticleStatus;
 import net.minecraft.server.packs.resources.ResourceManager;
+import org.joml.Vector4f;
 import org.jspecify.annotations.Nullable;
 import org.lwjgl.opengl.GL;
 import org.lwjgl.opengl.GLCapabilities;
@@ -83,12 +84,6 @@ public class SodiumConfigBuilder implements ConfigEntryPoint {
             return null;
         }
         return this.window.findBestMonitor();
-    }
-
-    public enum FullscreenMode {
-        OFF,
-        EXCLUSIVE,
-        BORDERLESS
     }
 
     public static void registerIcon(TextureManager textureManager) {
@@ -143,8 +138,7 @@ public class SodiumConfigBuilder implements ConfigEntryPoint {
                         Colors.THEME, Colors.THEME_LIGHTER, Colors.THEME_DARKER))
                 .addPage(this.buildGeneralPage(builder))
                 .addPage(this.buildQualityPage(builder))
-                .addPage(this.buildPerformancePage(builder))
-                .addPage(this.buildAdvancedPage(builder));
+                .addPage(this.buildPerformancePage(builder));
     }
 
     private OptionPageBuilder buildGeneralPage(ConfigBuilder builder) {
@@ -271,7 +265,7 @@ public class SodiumConfigBuilder implements ConfigEntryPoint {
                                 .setBinding(value -> {
                                     var monitor = this.getMonitor();
                                     if (monitor != null) {
-                                        this.window.setPreferredFullscreenVideoMode(0 == value ? Optional.empty() : Optional.of(monitor.getMode(value - 1)));
+                                        this.window.setPreferredFullscreenVideoMode(0 == value ? Optional.empty() : Optional.of(monitor.mode(value - 1)));
                                     }
                                 }, () -> {
                                     var monitor = this.getMonitor();
@@ -279,13 +273,13 @@ public class SodiumConfigBuilder implements ConfigEntryPoint {
                                         return 0;
                                     } else {
                                         Optional<VideoMode> optional = this.window.getPreferredFullscreenVideoMode();
-                                        return optional.map((videoMode) -> monitor.getVideoModeIndex(videoMode) + 1).orElse(0);
+                                        return optional.map((videoMode) -> monitor.indexOfMode(videoMode) + 1).orElse(0);
                                     }
                                 })
                                 .setEnabledProvider(
                                         (state) -> {
                                             var monitor = this.getMonitor();
-                                            if (monitor == null || monitor.getModeCount() <= 0) {
+                                            if (monitor == null || monitor.modeCount() <= 0) {
                                                 return false;
                                             }
                                             var os = OsUtils.getOs();
@@ -334,6 +328,24 @@ public class SodiumConfigBuilder implements ConfigEntryPoint {
                                 .setBinding(this.vanillaOpts.showAutosaveIndicator()::set, this.vanillaOpts.showAutosaveIndicator()::get)
                 )
         );
+        generalPage.addOptionGroup(builder.createOptionGroup().addOption(builder.createEnumOption(Identifier.fromNamespaceAndPath("sodium", "general.graphics_api"),
+                PreferredGraphicsApi.class)
+                .setStorageHandler(this.vanillaStorage)
+                .setName(Component.translatable("options.graphicsApi"))
+                .setTooltip(i -> {
+                    if (i == PreferredGraphicsApi.VULKAN) {
+                        return Component.translatable("options.graphicsApi.tooltip.vulkan");
+                    } else {
+                        return Component.translatable("options.graphicsApi.tooltip");
+                    }
+                })
+                .setElementNameProvider(EnumOptionBuilder.nameProviderFrom(
+                        Component.translatable("options.graphicsApi.default"),
+                        Component.translatable("options.graphicsApi.opengl"),
+                        Component.literal("Prefer Vulkan")))
+                .setDefaultValue(PreferredGraphicsApi.DEFAULT)
+                .setFlags(OptionFlag.REQUIRES_GAME_RESTART)
+                .setBinding((value) -> this.vanillaOpts.preferredGraphicsBackend().set(value), () -> this.vanillaOpts.preferredGraphicsBackend().get())));
         return generalPage;
     }
 
@@ -367,10 +379,10 @@ public class SodiumConfigBuilder implements ConfigEntryPoint {
                                 .setBinding((value) -> {
                                     this.vanillaOpts.cloudStatus().set(value);
 
-                                    if (Minecraft.useShaderTransparency()) {
-                                        RenderTarget framebuffer = Minecraft.getInstance().levelRenderer.getCloudsTarget();
+                                    if (Minecraft.getInstance().gameRenderer.gameRenderState().useShaderTransparency()) {
+                                        RenderTarget framebuffer = Minecraft.getInstance().levelRenderer.cloudsTarget();
                                         if (framebuffer != null) {
-                                            RenderSystem.getDevice().createCommandEncoder().clearColorAndDepthTextures(framebuffer.getColorTexture(), 0xFFFFFFFF, framebuffer.getDepthTexture(), 1.0f);
+                                            RenderSystem.getDevice().createCommandEncoder().clearColorAndDepthTextures(framebuffer.getColorTexture(), new Vector4f(1.0f), framebuffer.getDepthTexture(), 1.0f);
                                         }
                                     }
                                 }, () -> this.vanillaOpts.cloudStatus().get())
@@ -386,7 +398,7 @@ public class SodiumConfigBuilder implements ConfigEntryPoint {
                                 .setBinding((value) -> {
                                     this.vanillaOpts.cloudRange().set(value);
 
-                                    Minecraft.getInstance().levelRenderer.getCloudRenderer().markForRebuild();
+                                    Minecraft.getInstance().levelRenderer.cloudRenderer().markForRebuild();
                                 }, () -> this.vanillaOpts.cloudRange().get())
                                 .setImpact(OptionImpact.LOW)
                                 .setValueFormatter(ControlValueFormatterImpls.translateVariable("options.chunks"))
@@ -543,7 +555,7 @@ public class SodiumConfigBuilder implements ConfigEntryPoint {
                                 .setDefaultValue(FilterMode.NEAREST)
                                 .setBinding(filterMode -> {
                                     this.sodiumOpts.quality.pixelFilteringMode = filterMode;
-                                    Minecraft.getInstance().levelRenderer.resetSampler();
+                                    Minecraft.getInstance().levelExtractor.resetSampler();
                                 }, () -> this.sodiumOpts.quality.pixelFilteringMode)
                                 .setImpact(OptionImpact.MEDIUM)
                 )
@@ -551,32 +563,41 @@ public class SodiumConfigBuilder implements ConfigEntryPoint {
 
         qualityPage.addOptionGroup(builder.createOptionGroup()
                 .addOption(
-                        builder.createBooleanOption(Identifier.parse("sodium:quality.hidden_fluid_culling"))
+                        builder.createEnumOption(Identifier.parse("sodium:quality.hidden_fluid_culling"), Toggle.class)
                                 .setStorageHandler(this.sodiumStorage)
                                 .setName(Component.translatable("sodium.options.hidden_fluid_culling.name"))
                                 .setTooltip(Component.translatable("sodium.options.hidden_fluid_culling.tooltip"))
+                                .setElementNameProvider(EnumOptionBuilder.nameProviderFrom(
+                                        Component.translatable("sodium.options.hidden_fluid_culling.default"),
+                                        Component.translatable("sodium.options.hidden_fluid_culling.optimized")))
                                 .setImpact(OptionImpact.MEDIUM)
-                                .setDefaultValue(DEFAULTS.quality.hiddenFluidCulling)
-                                .setBinding(value -> this.sodiumOpts.quality.hiddenFluidCulling = value, () -> this.sodiumOpts.quality.hiddenFluidCulling)
+                                .setDefaultValue(Toggle.fromBoolean(DEFAULTS.quality.hiddenFluidCulling))
+                                .setBinding(value -> this.sodiumOpts.quality.hiddenFluidCulling = value.toBoolean(), () -> Toggle.fromBoolean(this.sodiumOpts.quality.hiddenFluidCulling))
                                 .setFlags(OptionFlag.REQUIRES_RENDERER_RELOAD)
                 )
                 .addOption(
-                        builder.createBooleanOption(Identifier.parse("sodium:quality.improved_fluid_shaping"))
+                        builder.createEnumOption(Identifier.parse("sodium:quality.improved_fluid_shaping"), Toggle.class)
                                 .setStorageHandler(this.sodiumStorage)
                                 .setName(Component.translatable("sodium.options.improved_fluid_shaping.name"))
                                 .setTooltip(Component.translatable("sodium.options.improved_fluid_shaping.tooltip"))
-                                .setDefaultValue(DEFAULTS.quality.improvedFluidShaping)
-                                .setBinding(value -> this.sodiumOpts.quality.improvedFluidShaping = value, () -> this.sodiumOpts.quality.improvedFluidShaping)
+                                .setElementNameProvider(EnumOptionBuilder.nameProviderFrom(
+                                        Component.translatable("sodium.options.improved_fluid_shaping.default"),
+                                        Component.translatable("sodium.options.improved_fluid_shaping.alternative")))
+                                .setDefaultValue(Toggle.fromBoolean(DEFAULTS.quality.improvedFluidShaping))
+                                .setBinding(value -> this.sodiumOpts.quality.improvedFluidShaping = value.toBoolean(), () -> Toggle.fromBoolean(this.sodiumOpts.quality.improvedFluidShaping))
                                 .setFlags(OptionFlag.REQUIRES_RENDERER_RELOAD)
                 )
                 .addOption(
-                        builder.createBooleanOption(Identifier.parse("sodium:quality.closest_point_entity_sort"))
+                        builder.createEnumOption(Identifier.parse("sodium:quality.closest_point_entity_sort"), Toggle.class)
                                 .setStorageHandler(this.sodiumStorage)
                                 .setName(Component.translatable("sodium.options.closest_point_entity_sort.name"))
                                 .setTooltip(Component.translatable("sodium.options.closest_point_entity_sort.tooltip"))
+                                .setElementNameProvider(EnumOptionBuilder.nameProviderFrom(
+                                        Component.translatable("sodium.options.closest_point_entity_sort.default"),
+                                        Component.translatable("sodium.options.closest_point_entity_sort.enhanced")))
                                 .setImpact(OptionImpact.MEDIUM)
-                                .setDefaultValue(DEFAULTS.quality.useClosestPointEntitySort)
-                                .setBinding(value -> this.sodiumOpts.quality.useClosestPointEntitySort = value, () -> this.sodiumOpts.quality.useClosestPointEntitySort)
+                                .setDefaultValue(Toggle.fromBoolean(DEFAULTS.quality.useClosestPointEntitySort))
+                                .setBinding(value -> this.sodiumOpts.quality.useClosestPointEntitySort = value.toBoolean(), () -> Toggle.fromBoolean(this.sodiumOpts.quality.useClosestPointEntitySort))
                 )
         );
         return qualityPage;
@@ -694,46 +715,13 @@ public class SodiumConfigBuilder implements ConfigEntryPoint {
                 .setDefaultValue(DEFAULTS.performance.useNoErrorGLContext)
                 .setBinding(value -> this.sodiumOpts.performance.useNoErrorGLContext = value, () -> this.sodiumOpts.performance.useNoErrorGLContext)
                 .setEnabledProvider((state) -> {
+                    if (!RenderSystem.getDevice().getDeviceInfo().backendName().contains("OpenGL")) return false;
                     GLCapabilities capabilities = GL.getCapabilities();
                     return (capabilities.OpenGL46 || capabilities.GL_KHR_no_error)
                             && !Workarounds.isWorkaroundEnabled(Workarounds.Reference.NO_ERROR_CONTEXT_UNSUPPORTED);
                 })
                 .setImpact(OptionImpact.LOW)
                 .setFlags(OptionFlag.REQUIRES_GAME_RESTART);
-    }
-
-    private OptionPageBuilder buildAdvancedPage(ConfigBuilder builder) {
-        var advancedPage = builder.createOptionPage().setName(Component.translatable("sodium.options.pages.advanced"));
-
-        boolean isPersistentMappingSupported = MappedStagingBuffer.isSupported(RenderDevice.INSTANCE);
-
-        advancedPage.addOptionGroup(builder.createOptionGroup()
-                .addOption(
-                        builder.createBooleanOption(Identifier.parse("sodium:advanced.use_persistent_mapping"))
-                                .setStorageHandler(this.sodiumStorage)
-                                .setName(Component.translatable("sodium.options.use_persistent_mapping.name"))
-                                .setTooltip(Component.translatable("sodium.options.use_persistent_mapping.tooltip"))
-                                .setDefaultValue(DEFAULTS.advanced.useAdvancedStagingBuffers)
-                                .setBinding(value -> this.sodiumOpts.advanced.useAdvancedStagingBuffers = value, () -> this.sodiumOpts.advanced.useAdvancedStagingBuffers)
-                                .setEnabled(isPersistentMappingSupported)
-                                .setImpact(OptionImpact.MEDIUM)
-                                .setFlags(OptionFlag.REQUIRES_RENDERER_RELOAD)
-                )
-        );
-
-        advancedPage.addOptionGroup(builder.createOptionGroup()
-                .addOption(
-                        builder.createIntegerOption(Identifier.parse("sodium:advanced.cpu_render_ahead_limit"))
-                                .setStorageHandler(this.sodiumStorage)
-                                .setName(Component.translatable("sodium.options.cpu_render_ahead_limit.name"))
-                                .setValueFormatter(ControlValueFormatterImpls.translateVariable("sodium.options.cpu_render_ahead_limit.value"))
-                                .setTooltip(Component.translatable("sodium.options.cpu_render_ahead_limit.tooltip"))
-                                .setRange(0, 9, 1)
-                                .setDefaultValue(DEFAULTS.advanced.cpuRenderAheadLimit)
-                                .setBinding(value -> this.sodiumOpts.advanced.cpuRenderAheadLimit = value, () -> this.sodiumOpts.advanced.cpuRenderAheadLimit)
-                )
-        );
-        return advancedPage;
     }
 
 }

@@ -1,16 +1,21 @@
 import org.gradle.api.Project
 
 object BuildConfig {
-    val MINECRAFT_VERSION: String = "26.1.2"
-    val NEOFORGE_VERSION: String = "26.1.2.48-beta"
+    val MINECRAFT_VERSION: String = "26.2"
+    val NEOFORGE_VERSION: String = "26.2.0.0-beta"
     val FABRIC_LOADER_VERSION: String = "0.19.2"
-    val FABRIC_API_VERSION: String = "0.148.0+26.1.2"
+    val FABRIC_API_VERSION: String = "0.152.1+26.2"
     val SUPPORT_FRAPI : Boolean = true
 
     // https://semver.org/
-    val MOD_VERSION: String = "0.8.11"
+    val MOD_VERSION: String = "0.9.0"
 
-    val RELEASE_TAG: String = "mc$MINECRAFT_VERSION-$MOD_VERSION"
+    val MINECRAFT_VERSION_SHORT: String = MINECRAFT_VERSION
+            .replace("-snapshot-", "s")
+            .replace("-pre-", "p")
+            .replace("-rc-", "r")
+
+    val RELEASE_TAG: String = "mc$MINECRAFT_VERSION_SHORT-$MOD_VERSION"
 
     val CURSEFORGE_PROJECT_ID = "394468"
     val MODRINTH_PROJECT_ID = "AANobbMI"
@@ -28,7 +33,7 @@ object BuildConfig {
             builder.append("-SNAPSHOT")
         }
 
-        builder.append("+mc").append(MINECRAFT_VERSION)
+        builder.append("+mc").append(MINECRAFT_VERSION_SHORT)
 
         if (!isReleaseBuild) {
             if (buildId != null) {
